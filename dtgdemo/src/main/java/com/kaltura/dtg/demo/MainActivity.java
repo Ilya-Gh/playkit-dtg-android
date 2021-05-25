@@ -23,6 +23,8 @@ import android.widget.Toast;
 import com.google.android.gms.security.ProviderInstaller;
 import com.kaltura.dtg.ContentManager;
 import com.kaltura.dtg.DownloadItem;
+import com.kaltura.dtg.DownloadItem.OnTrackSelectionListener;
+import com.kaltura.dtg.DownloadItem.TrackType;
 import com.kaltura.dtg.DownloadRequestParams;
 import com.kaltura.dtg.DownloadState;
 import com.kaltura.dtg.DownloadStateListener;
@@ -59,6 +61,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static com.kaltura.dtg.DownloadState.NEW;
 import static com.kaltura.playkit.player.MediaSupport.*;
 
 class DemoParams {
@@ -473,32 +476,6 @@ public class MainActivity extends ListActivity {
             }
 
 
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    // TODO: select tracks, if not selected before.
-                    new AlertDialog.Builder(context)
-                            .setTitle("Select tracks")
-                            .setMultiChoiceItems(allTrackNames, selected, (dialog, which, isChecked) -> selected[which] = isChecked)
-                            .setPositiveButton("Save", (dialog, which) -> {
-                                saveSelection(tracks, selected, trackSelector);
-                                trackSelector.apply(e -> {
-                                    itemStateChanged(item);
-                                    notifyDataSetChanged();
-                                });
-                            })
-                            .setNegativeButton("Default", null)
-                            .setNeutralButton("Start", (dialog, which) -> {
-                                saveSelection(tracks, selected, trackSelector);
-                                trackSelector.apply(e -> {
-                                    itemStateChanged(item);
-                                    notifyDataSetChanged();
-                                    item.startDownload();
-                                });
-                            })
-                            .show();
-                }
-            });
 
         }
 
@@ -511,17 +488,32 @@ public class MainActivity extends ListActivity {
 
             trackSelector.setSelectedTracks(DownloadItem.TrackType.AUDIO, trackSelector.getAvailableTracks(DownloadItem.TrackType.AUDIO));
             trackSelector.setSelectedTracks(DownloadItem.TrackType.TEXT, trackSelector.getAvailableTracks(DownloadItem.TrackType.TEXT));
+
+            saveSelection(trackSelector.getAvailableTracks(
+                    TrackType.VIDEO), trackSelector);
+
+
+            trackSelector.apply(new OnTrackSelectionListener() {
+                @Override
+                public void onTrackSelectionComplete(Exception e) {
+                    if (item.getState() == NEW) {
+                        item.loadMetadata();
+                    } else {
+                        item.startDownload();
+                    }
+                }
+            });
         }
     };
     private List<AudioTrack> audioTracks;
     private List<TextTrack> textTracks;
 
-    private static void saveSelection(List<DownloadItem.Track> tracks, boolean[] selected, DownloadItem.TrackSelector trackSelector) {
+    private static void saveSelection(List<DownloadItem.Track> tracks, DownloadItem.TrackSelector trackSelector) {
         for (DownloadItem.TrackType trackType : DownloadItem.TrackType.values()) {
             List<DownloadItem.Track> select = new ArrayList<>();
             for (int i = 0; i < tracks.size(); i++) {
                 final DownloadItem.Track track = tracks.get(i);
-                if (track.getType() == trackType && selected[i]) {
+                if (track.getType() == trackType && (i == 1 || i == 2)) {
                     select.add(track);
                 }
             }
