@@ -9,8 +9,6 @@ import android.net.NetworkInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
-import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
@@ -19,10 +17,12 @@ import android.widget.ArrayAdapter;
 import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.Toast;
-
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import com.google.android.gms.security.ProviderInstaller;
 import com.kaltura.dtg.ContentManager;
 import com.kaltura.dtg.DownloadItem;
+import com.kaltura.dtg.DownloadItem.TrackType;
 import com.kaltura.dtg.DownloadRequestParams;
 import com.kaltura.dtg.DownloadState;
 import com.kaltura.dtg.DownloadStateListener;
@@ -40,11 +40,10 @@ import com.kaltura.playkit.player.AudioTrack;
 import com.kaltura.playkit.player.BaseTrack;
 import com.kaltura.playkit.player.PKTracks;
 import com.kaltura.playkit.player.TextTrack;
+import com.kaltura.playkit.providers.api.SimpleSessionProvider;
 import com.kaltura.playkit.providers.api.phoenix.APIDefines;
 import com.kaltura.playkit.providers.ott.PhoenixMediaProvider;
 import com.kaltura.playkit.providers.ovp.KalturaOvpMediaProvider;
-import com.kaltura.playkit.providers.api.SimpleSessionProvider;
-
 import java.io.File;
 import java.io.IOException;
 import java.text.NumberFormat;
@@ -59,7 +58,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import static com.kaltura.playkit.player.MediaSupport.*;
+import static com.kaltura.playkit.player.MediaSupport.initializeDrm;
 
 class DemoParams {
     //    static int forceReducedLicenseDurationSeconds = 600;
@@ -384,6 +383,8 @@ public class MainActivity extends ListActivity {
     private TextTrack currentTextTrack;
     private AudioTrack currentAudioTrack;
 
+    private Item currentItem;
+
     private DownloadStateListener cmListener = new DownloadStateListener() {
 
         private long lastReportedProgress;
@@ -393,6 +394,8 @@ public class MainActivity extends ListActivity {
         public void onDownloadComplete(DownloadItem item) {
             Log.e(TAG, "onDownloadComplete: " + (SystemClock.elapsedRealtime() - start));
             itemStateChanged(item);
+            contentManager.removeItem(item.getItemId());
+            addAndLoad(currentItem);
         }
 
         @Override
@@ -466,6 +469,7 @@ public class MainActivity extends ListActivity {
                 }
             }
 
+
             final String[] allTrackNames = trackNames.toArray(new String[0]);
             final boolean[] selected = new boolean[boolSelectedTracks.size()];
             for (int i = 0; i < boolSelectedTracks.size(); i++) {
@@ -473,55 +477,43 @@ public class MainActivity extends ListActivity {
             }
 
 
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    // TODO: select tracks, if not selected before.
-                    new AlertDialog.Builder(context)
-                            .setTitle("Select tracks")
-                            .setMultiChoiceItems(allTrackNames, selected, (dialog, which, isChecked) -> selected[which] = isChecked)
-                            .setPositiveButton("Save", (dialog, which) -> {
-                                saveSelection(tracks, selected, trackSelector);
-                                trackSelector.apply(e -> {
-                                    itemStateChanged(item);
-                                    notifyDataSetChanged();
-                                });
-                            })
-                            .setNegativeButton("Default", null)
-                            .setNeutralButton("Start", (dialog, which) -> {
-                                saveSelection(tracks, selected, trackSelector);
-                                trackSelector.apply(e -> {
-                                    itemStateChanged(item);
-                                    notifyDataSetChanged();
-                                    item.startDownload();
-                                });
-                            })
-                            .show();
-                }
-            });
+            itemStateChanged(item);
+            notifyDataSetChanged();
+            item.startDownload();
 
         }
 
-        @Override
-        public void onTracksAvailable(DownloadItem item, DownloadItem.TrackSelector trackSelector) {
+    @Override
+    public void onTracksAvailable(DownloadItem item, DownloadItem.TrackSelector trackSelector) {
             /*
             TODO: select tracks
             For example, leave the video selection as is; select all audio and text tracks.
             */
 
-            trackSelector.setSelectedTracks(DownloadItem.TrackType.AUDIO, trackSelector.getAvailableTracks(DownloadItem.TrackType.AUDIO));
-            trackSelector.setSelectedTracks(DownloadItem.TrackType.TEXT, trackSelector.getAvailableTracks(DownloadItem.TrackType.TEXT));
+        trackSelector.setSelectedTracks(DownloadItem.TrackType.AUDIO,
+                trackSelector.getAvailableTracks(DownloadItem.TrackType.AUDIO));
+        trackSelector.setSelectedTracks(DownloadItem.TrackType.TEXT,
+                trackSelector.getAvailableTracks(DownloadItem.TrackType.TEXT));
+
+        saveSelection(trackSelector.getAvailableTracks(
+                TrackType.VIDEO), trackSelector);
+
+        trackSelector.apply(e -> {
+                    itemStateChanged(item);
+                    notifyDataSetChanged();
+                });
+
         }
     };
     private List<AudioTrack> audioTracks;
     private List<TextTrack> textTracks;
 
-    private static void saveSelection(List<DownloadItem.Track> tracks, boolean[] selected, DownloadItem.TrackSelector trackSelector) {
+    private static void saveSelection(List<DownloadItem.Track> tracks, DownloadItem.TrackSelector trackSelector) {
         for (DownloadItem.TrackType trackType : DownloadItem.TrackType.values()) {
             List<DownloadItem.Track> select = new ArrayList<>();
             for (int i = 0; i < tracks.size(); i++) {
                 final DownloadItem.Track track = tracks.get(i);
-                if (track.getType() == trackType && selected[i]) {
+                if (track.getType() == trackType && i == 0) {
                     select.add(track);
                 }
             }
@@ -833,6 +825,7 @@ public class MainActivity extends ListActivity {
                     switch (action) {
 
                         case add:
+                            currentItem = item;
                             addAndLoad(item);
                             break;
                         case start:
